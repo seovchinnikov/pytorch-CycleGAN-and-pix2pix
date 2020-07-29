@@ -31,7 +31,7 @@ class ProGanModel(BaseModel):
     def modify_commandline_options(parser, is_train=True):
 
         parser.set_defaults(netG='progan', netD='progan', dataset_mode='single', beta1=0., ngf=512, ndf=512,
-                            gan_mode='relhinge')
+                            gan_mode='wgangp')
         parser.add_argument('--z_dim', type=int, default=128, help='random noise dim')
         parser.add_argument('--max_steps', type=int, default=6, help='steps of growing')
         parser.add_argument('--steps_schedule', type=str, default='linear',
@@ -45,7 +45,7 @@ class ProGanModel(BaseModel):
         self.max_steps = opt.max_steps
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
         self.loss_names = ['G_GAN', 'D_real', 'D_fake', 'D']
-        self.loss_D_real, self.loss_D_fake, self.loss_G_GAN, self.loss_D, self.loss_G = 0, 0, 0, 0, 0
+        self.loss_D_real, self.loss_D_fake, self.loss_G_GAN, self.loss_D, self.loss_G, self.loss_D_gradpen = 0, 0, 0, 0, 0, 0
         if self.opt.gan_mode == 'wgangp':
             self.loss_names.append('D_gradpen')
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
@@ -173,7 +173,8 @@ class ProGanModel(BaseModel):
             self.loss_D = (self.loss_D_fake + self.loss_D_real) * 0.5
         else:
             self.loss_D = self.criterionGAN(self.pred_real, None, other_pred=pred_fake)
-
+        # Some memory optimizations
+        [self.pred_real] = self.detach([self.pred_real])
         if self.opt.gan_mode == 'wgangp':
             ### gradient penalty for D
             b_size = fake_B.size(0)
@@ -194,6 +195,9 @@ class ProGanModel(BaseModel):
                     loss_D_scaled.backward()
             else:
                 self.loss_D.backward()
+        # Some memory optimizations
+        self.loss_D, self.loss_D_gradpen, self.loss_D_real, self.loss_D_fake = \
+            self.detach([self.loss_D, self.loss_D_gradpen, self.loss_D_real, self.loss_D_fake])
 
     def backward_G(self):
         """Calculate GAN loss for the generator"""
@@ -212,6 +216,9 @@ class ProGanModel(BaseModel):
                     loss_G_scaled.backward()
             else:
                 self.loss_G.backward()
+        # Some memory optimizations
+        self.loss_G_GAN, self.loss_G = \
+            self.detach([self.loss_G_GAN, self.loss_G])
 
     def optimize_parameters(self):
         self.forward()  # compute fake images: G(A)
@@ -297,3 +304,13 @@ class ProGanModel(BaseModel):
 
         # return the so computed real_samples
         return real_samples
+
+    def detach(self, list_of_tensors):
+        result = []
+        for t in list_of_tensors:
+            if isinstance(t, torch.Tensor):
+                result.append(t.detach())
+            else:
+                result.append(t)
+
+        return result
