@@ -1,7 +1,6 @@
 """ Module containing custom layers
 Thanks to https://raw.githubusercontent.com/akanimax/pro_gan_pytorch/
 """
-
 import torch as th
 
 
@@ -515,3 +514,23 @@ class DisGeneralConvBlock(th.nn.Module):
         y = self.downSampler(y)
 
         return y
+
+
+class RelativisticAverageHingeLoss(th.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, r_preds, f_preds):
+        # difference between real and fake:
+        r_f_diff = r_preds - th.mean(f_preds)
+
+        # difference between fake and real samples
+        f_r_diff = f_preds - th.mean(r_preds)
+
+        # return the loss
+        loss = (th.mean(th.nn.ReLU()(1 - r_f_diff))
+                + th.mean(th.nn.ReLU()(1 + f_r_diff)))
+
+        return loss
+

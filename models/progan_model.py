@@ -31,7 +31,7 @@ class ProGanModel(BaseModel):
     def modify_commandline_options(parser, is_train=True):
 
         parser.set_defaults(netG='progan', netD='progan', dataset_mode='single', beta1=0., ngf=512, ndf=512,
-                            gan_mode='wgangp')
+                            gan_mode='relhinge')
         parser.add_argument('--z_dim', type=int, default=128, help='random noise dim')
         parser.add_argument('--max_steps', type=int, default=6, help='steps of growing')
         parser.add_argument('--steps_schedule', type=str, default='linear',
@@ -45,6 +45,7 @@ class ProGanModel(BaseModel):
         self.max_steps = opt.max_steps
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
         self.loss_names = ['G_GAN', 'D_real', 'D_fake', 'D']
+        self.loss_D_real, self.loss_D_fake, self.loss_G_GAN, self.loss_D, self.loss_G = 0, 0, 0, 0, 0
         if self.opt.gan_mode == 'wgangp':
             self.loss_names.append('D_gradpen')
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
@@ -158,16 +159,21 @@ class ProGanModel(BaseModel):
         # Fake; stop backprop to the generator by detaching fake_B
         fake_B = self.fake_B
         pred_fake = self.netD(fake_B.detach(), step=self.step, alpha=self.alpha)
-        self.loss_D_fake = self.criterionGAN(pred_fake, False)
         # Real
         real_B = self.real_B
-        pred_real = self.netD(real_B, step=self.step, alpha=self.alpha)
-        self.loss_D_real = self.criterionGAN(pred_real, True)
-        if self.opt.gan_mode == 'wgangp':
-            # some correction of D loss
-            self.loss_D_real += 0.001 * (pred_real ** 2).mean()
-        # combine loss and calculate gradients
-        self.loss_D = (self.loss_D_fake + self.loss_D_real) * 0.5
+        self.pred_real = self.netD(real_B, step=self.step, alpha=self.alpha)
+
+        if self.opt.gan_mode != 'relhinge':
+            self.loss_D_fake = self.criterionGAN(pred_fake, False)
+            self.loss_D_real = self.criterionGAN(self.pred_real, True)
+            if self.opt.gan_mode == 'wgangp':
+                # some correction of D loss
+                self.loss_D_real += 0.001 * (self.pred_real ** 2).mean()
+            # combine loss and calculate gradients
+            self.loss_D = (self.loss_D_fake + self.loss_D_real) * 0.5
+        else:
+            self.loss_D = self.criterionGAN(self.pred_real, None, other_pred=pred_fake)
+
         if self.opt.gan_mode == 'wgangp':
             ### gradient penalty for D
             b_size = fake_B.size(0)
@@ -194,7 +200,10 @@ class ProGanModel(BaseModel):
         # First, G(A) should fake the discriminator
         fake_B = self.fake_B
         pred_fake = self.netD(fake_B, step=self.step, alpha=self.alpha)
-        self.loss_G_GAN = self.criterionGAN(pred_fake, True)
+        if self.opt.gan_mode != 'relhinge':
+            self.loss_G_GAN = self.criterionGAN(pred_fake, True)
+        else:
+            self.loss_G_GAN = self.criterionGAN(pred_fake, None, other_pred=self.pred_real.detach())
         self.loss_G = self.loss_G_GAN
 
         if not (torch.isinf(self.loss_G) or torch.isnan(self.loss_G) or torch.mean(torch.abs(self.loss_G)) > 100):

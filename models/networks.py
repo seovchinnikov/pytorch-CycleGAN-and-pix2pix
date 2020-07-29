@@ -10,6 +10,7 @@ import numpy as np
 ###############################################################################
 # Helper Functions
 ###############################################################################
+from models.progan_layers import RelativisticAverageHingeLoss
 
 
 class Identity(nn.Module):
@@ -244,6 +245,8 @@ class GANLoss(nn.Module):
             self.loss = nn.BCEWithLogitsLoss()
         elif gan_mode in ['wgangp']:
             self.loss = None
+        elif gan_mode in ['relhinge']:
+            self.loss = RelativisticAverageHingeLoss()
         else:
             raise NotImplementedError('gan mode %s not implemented' % gan_mode)
 
@@ -264,13 +267,13 @@ class GANLoss(nn.Module):
             target_tensor = self.fake_label
         return target_tensor.expand_as(prediction)
 
-    def __call__(self, prediction, target_is_real):
+    def __call__(self, prediction, target_is_real, other_pred=None):
         """Calculate loss given Discriminator's output and grount truth labels.
 
         Parameters:
             prediction (tensor) - - tpyically the prediction output from a discriminator
             target_is_real (bool) - - if the ground truth label is for real images or fake images
-
+            other_pred (tensor) - other prediction if needed (for some losses)
         Returns:
             the calculated loss.
         """
@@ -282,6 +285,8 @@ class GANLoss(nn.Module):
                 loss = -prediction.mean()
             else:
                 loss = prediction.mean()
+        elif self.gan_mode == 'relhinge':
+            loss = self.loss(prediction, other_pred)
         return loss
 
 
