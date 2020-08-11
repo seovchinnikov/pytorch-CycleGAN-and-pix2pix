@@ -163,17 +163,17 @@ class CycleGANModel(BaseModel):
         else:
             loss_D.backward()
 
-        return loss_D, pred_real.detach()
+        return loss_D
 
     def backward_D_A(self):
         """Calculate GAN loss for discriminator D_A"""
         fake_B = self.fake_B_pool.query(self.fake_B)
-        self.loss_D_A, self.pred_real_D_B = self.backward_D_basic(self.netD_A, self.real_B, fake_B, loss_id=0)
+        self.loss_D_A = self.backward_D_basic(self.netD_A, self.real_B, fake_B, loss_id=0)
 
     def backward_D_B(self):
         """Calculate GAN loss for discriminator D_B"""
         fake_A = self.fake_A_pool.query(self.fake_A)
-        self.loss_D_B, self.pred_real_D_A = self.backward_D_basic(self.netD_B, self.real_A, fake_A, loss_id=1)
+        self.loss_D_B = self.backward_D_basic(self.netD_B, self.real_A, fake_A, loss_id=1)
 
     def backward_G(self):
         """Calculate the loss for generators G_A and G_B"""
@@ -196,13 +196,13 @@ class CycleGANModel(BaseModel):
         if self.opt.gan_mode != 'relhinge':
             self.loss_G_A = self.criterionGAN(self.netD_A(self.fake_B), True)
         else:
-            self.loss_G_A = self.criterionGAN(self.netD_A(self.fake_B), None, other_pred=self.pred_real_D_B.detach())
+            self.loss_G_A = self.criterionGAN(self.netD_A(self.fake_B), None, other_pred=self.netD_A(self.real_B).detach())
 
         # GAN loss D_B(G_B(B))
         if self.opt.gan_mode != 'relhinge':
             self.loss_G_B = self.criterionGAN(self.netD_B(self.fake_A), True)
         else:
-            self.loss_G_B = self.criterionGAN(self.netD_B(self.fake_A), None, other_pred=self.pred_real_D_A.detach())
+            self.loss_G_B = self.criterionGAN(self.netD_B(self.fake_A), None, other_pred=self.netD_B(self.real_A).detach())
         # Forward cycle loss || G_B(G_A(A)) - A||
         self.loss_cycle_A = self.criterionCycle(self.rec_A, self.real_A) * lambda_A
         # Backward cycle loss || G_A(G_B(B)) - B||
